@@ -25,7 +25,7 @@ SECRET_KEY = "django-insecure-j%!2v7#94&n-a#&lvafcq3x!u@^2$-gb5c4i%65hkst%bf-@g2
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1','0.0.0.0', '192.168.116.13', '192.168.1.101', '192.168.1.106', '192.168.1.107', '192.168.1.171']
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -41,12 +41,13 @@ INSTALLED_APPS = [
     # local app
     "myapp.apps.MyappConfig",
     "channels",
-    "invoice.apps.InvoiceConfig"
+    "corsheaders",  # Add this
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "corsheaders.middleware.CorsMiddleware",  # Add this before CommonMiddleware
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -84,16 +85,16 @@ DATABASES = {
         "NAME": BASE_DIR / "db.sqlite3",
     }
 }
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'ISM',
-#         'USER': 'postgres',
-#         'PASSWORD': '62443444',
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#     }
-# }
+#DATABASES = {
+#    'default': {
+#        'ENGINE': 'django.db.backends.postgresql',
+#        'NAME': 'ISM',
+#        'USER': 'postgres',
+#        'PASSWORD': '62443444',
+#        'HOST': 'localhost',
+#        'PORT': '5432',
+#    }
+#}
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.postgresql',
@@ -156,3 +157,15 @@ CHANNEL_LAYERS = {
         'BACKEND': 'channels.layers.InMemoryChannelLayer',
     },
 }
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # Vue dev server
+    "http://127.0.0.1:5173",
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
