@@ -1,10 +1,7 @@
 Django
-channels
-redis
 pandas
 openpyxl
 jdatetime
 qrcode
 psycopg2-binary
 daphne
-

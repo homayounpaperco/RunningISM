@@ -397,8 +397,6 @@ class Sales(models.Model):
         return f"Sale (ID: {self.id}, Date: {self.date}, Customer: {self.customer})"
 
 
-
-
 class AnbarGeneric(models.Model):
     """
     Abstract base model for generic anbar items.
@@ -540,7 +538,6 @@ class Anbar_Khamir_Ghadim(AnbarGeneric):
 
     def __str__(self):
         return f"{self.receive_date} - {self.reel_number}  - {self.width} - {self.supplier_name} - {self.material_type} - {self.material_name}- {self.unit} - {self.description} - {self.status} - {self.location}"
-
 
 
 class Anbar_Khamir_Kordan(AnbarGeneric):
@@ -786,3 +783,18 @@ class Alert(models.Model):
 
     class Meta:
         db_table = 'Alert'
+
+
+class WeightAdjustmentLog(models.Model):
+    license_number = models.CharField(max_length=50)
+    username = models.CharField(max_length=100)
+    original_weight = models.CharField(max_length=50)
+    adjusted_weight = models.CharField(max_length=50)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    action = models.CharField(max_length=50, default='weight_adjustment')
+
+    def __str__(self):
+        return f"{self.username} adjusted weight for {self.license_number} from {self.original_weight} to {self.adjusted_weight}"
+
+    class Meta:
+        ordering = ['-timestamp']
