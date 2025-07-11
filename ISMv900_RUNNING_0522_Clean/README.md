@@ -1,118 +1,257 @@
-# ISMv900
-Inventory and Sales Management in Python using Django and JavaScrips using Vue.JS
 
-## setup project: 
-we use python 3.9 and django 4.2
+From A to Z setup Linux servers and running services.
+    
 
-```bach
-pip3 install pandas openpyxl jdatetime qrcode channels psycopg2-binary
+## Installation:
 
-```
+### Update:
 
-### Step 1: Create a Virtual Environment
+    sudo apt-get update
 
-To create a virtual environment, open your terminal or command prompt and navigate to the directory where you want to create the virtual environment. Then, run the following command:
+    sudo apt-get upgrade
 
-```bash
-python3 -m venv myenv
-```
+### Change directory:
 
-Replace `myenv` with the name you want to give to your virtual environment. This command creates a new directory with the specified name, which contains the virtual environment.
+    cd ~/V9/v988/
 
-### Step 2: Activate the Virtual Environment
+### Rename old folder:
 
-#### On Windows:
+admin@raspberrypi:~/V9/v988 $ `mv ISMv900 ISMv900_old_$(date +%Y%m%d%H%M%S)`
 
-To activate the virtual environment on Windows, run the following command in your terminal:
+### Delete old venv:
 
-```cmd
-myenv\Scripts\activate
-```
+admin@raspberrypi:~/V9/v988 $ `rm -r venv`
 
-Replace `myenv` with the name of your virtual environment.
+### Clone new repo:
 
-#### On macOS and Linux:
+admin@raspberrypi:~/V9/v988 $ `git clone https://github.com/amirholakoo/ISMv900.git`
 
-To activate the virtual environment on macOS or Linux, run the following command in your terminal:
+### NOTE:  This command changes the ownership of all files and directories within venv and ISMv900 to the current user and group:
 
-```bash
-source myenv/bin/activate
-```
+`sudo chown -R $USER:$USER ISMv900`
+`sudo chown -R $USER:$USER venv`
 
-Replace `myenv` with the name of your virtual environment.
+### Install Python:
 
-### Step 3: Verify the Virtual Environment
+admin@raspberrypi:~/V9/v988 $ `sudo apt-get install python3 python3-pip`
 
-After activating the virtual environment, your terminal prompt should change to indicate that you are now working inside the virtual environment. It will look something like this:
+### Install Virtual Env:
 
-```bash
-(myenv) $
-```
+sudo pip3 install virtualenv
 
-This indicates that the virtual environment `myenv` is active.
+### Create/Activate/Deactivate venv:
 
-### Step 4: Install Packages from `requirements.txt`
+(venv) admin@raspberrypi:~/V9/v988 $ `python3 -m venv venv`
 
-To install the packages listed in the `requirements.txt` file, you can use the following command:
+activate:
 
-```bash
+`source venv/bin/activate`
+
+deactivate:
+
+`deactivate`
+
+### Install Django:
+
+(venv) admin@raspberrypi:~/V9/v988/ISMv900 $ `pip install django`
+
+OR
+
 pip install -r requirements.txt
+
+### Install jdatetime:
+
+(venv) admin@raspberrypi:~/V9/v988/ISMv900 $ `pip install jdatetime`
+
+### Create static/dist in ISMv900 root
+
+|- myapp
+
+|- frontend
+
+.
+
+.
+
+.
+
+|- static
+
+	L---dist
+ 
+
+(venv) admin@raspberrypi:~/V9/v988/ISMv900 $ mkdir -p static/dist
+
+### Run Django Server:
+
+    python manage.py runserver
+
+access:
+
+    http://localhost:8000
+    
+**Stop the server:**
+
+    Crtl+C
+
+## BackEnd:
+
+### Make Migrations:
+
+    python manage.py makemigrations
+
+### Make Migrate:
+
+    python manage.py migrate
+
+### Make Migrations for myapp:
+
+    python manage.py makemigrations myapp
+
+### Make Migrate for myapp:
+
+    python manage.py migrate myapp
+
+OR
+
+	python manage.py makemigrations
+	python manage.py migrate
+	python manage.py makemigrations myapp
+	python manage.py migrate myapp
+
+### Run Django Server:
+
+    python manage.py runserver
+
+### Create users:
+
+    python manage.py createsuperuser
+
+### Access:
+
+--- python manage.py runserver @ http://127.0.0.1:8000/
+
+## FrontEnd:
+
+### Change directory:
+
+    cd frontend
+
+### Download and Install npm:
+
+Download packages:
+
+    sudo apt install npm -y
+
+Installing:
+
+    npm install
+
+### Run Vue.js Server:
+
+    npm run serve
+
+### Install and Run PostgreSQL
+
+Install PostgreSQL: The installation steps vary depending on your operating system.
+
+`sudo apt-get update`
+
+`sudo apt-get install postgresql postgresql-contrib`
+
+Start PostgreSQL service (if not already running):
+
+`sudo service postgresql start`
+
+Create a PostgreSQL User and Database:
+
+`sudo -u postgres psql`
+
+`CREATE DATABASE mydatabase;`
+
+`CREATE USER admin WITH ENCRYPTED PASSWORD 'pi';`
+
+`GRANT ALL PRIVILEGES ON DATABASE mydatabase TO admin;`
+
+`\q`
+
+** find your venv and activate:**
+
+`source venv/bin/activate`
+
+`sudo apt-get install libpq-dev`
+
+`pip install django-environ`
+
+`pip install psycopg2`
+
+### Configure Your Django
+
+Modify settings.py: Update the DATABASES setting in `myapp` Django project's `settings.py` file:
+
+**If you can't find it in myapp directory then**
+
+`sudo nano settings.py`
+
+```
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'mydatabase',
+        'USER': 'admin',
+        'PASSWORD': 'pi',
+        'HOST': 'localhost',
+        'PORT': '',
+    }
+}
 ```
 
-This command tells `pip` to install all the packages listed in the `requirements.txt` file. It's a convenient way to ensure that your project has all the necessary dependencies installed.
+Replace `mydatabase`, `admin`, and `pi` with your PostgreSQL database and user credentials.
 
 
-### Step 5: Deactivate the Virtual Environment
+### Transfer Your Data
 
-When you're done working in the virtual environment, you can deactivate it by running the following command:
+Export Data from SQLite: Use Django's `dumpdata` command to export your existing data:
 
-```bash
-deactivate
-```
+`python manage.py dumpdata > data.json`
 
+Migrate Your Models: Apply your migrations to the new PostgreSQL database:
 
-### Step 6: Run the Django Development Server
+`python manage.py migrate`
 
-Within your project directory, you can start the Django development server by running:
+Import Data to PostgreSQL: Load the data you exported from SQLite into PostgreSQL:
 
-```bash
-python manage.py runserver
-```
+`python manage.py loaddata data.json`
 
-This command starts the Django development server, which by default runs on port 8000.
+### Windows SETUP:
 
-### Step 7: Access Your Django Project
+Clone: git clone https://github.com/amirholakoo/ISMv900.git
 
-Open your web browser and navigate to `http://127.0.0.1:8000/`. You should see the default Django welcome page, indicating that your Django project is running successfully.
+`python -m venv venv`
 
-### Additional Tips
+`venv\Scripts\activate`
 
-- **Using a Different Port**: If port 8000 is already in use, you can specify a different port by appending it to the `runserver` command, like so: `python manage.py runserver 8080`.
-- **Running Migrations**: After creating models in your app, you'll need to create and apply migrations to update your database schema. Run `python manage.py makemigrations` followed by `python manage.py migrate`.
+`pip install -r requirements.txt`
 
+`mkdir static/dist`
 
+`python manage.py makemigrations`
 
-### Step 8: Create the Superuser
+`python manage.py migrate`
 
-Run the following command to create a superuser:
+`python manage.py makemigrations myapp`
 
-```bash
-python manage.py createsuperuser
-```
+`python manage.py migrate myapp`
 
-This command will prompt you to enter a username, email address, and password for the superuser. The email address is optional, but it's recommended to provide one.
+`python manage.py createsuperuser`
 
-### Step 9: Follow the Prompts
+`cd frontend`
 
-You'll be asked to enter the username, email (optional), and password for the superuser. Make sure to choose a strong password.
+`npm install`
 
-### Step 10: Access the Django Admin Site
+`npm run serve`
 
-After creating the superuser, you can access the Django admin site by running:
+`cd..`
 
-```bash
-python manage.py runserver
-```
-
-Then, open your web browser and navigate to `http://127.0.0.1:8000/admin/`. Log in with the superuser credentials you just created.
+`python manage.py runserver`
 
