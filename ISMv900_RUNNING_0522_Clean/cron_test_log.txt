@@ -1,0 +1,9 @@
+ssh: connect to host 192.168.1.26 port 22: No route to host
+scp: Connection closed
+Copying latest backup to db.sqlite3 on remote host...
+ssh: connect to host 192.168.1.26 port 22: No route to host
+Warning: Failed to create db.sqlite3 copy on remote host
+/home/admin/Downloads/ISMv900/remote_backup_database.sh: line 31: /remote_backup_log.txt: Permission denied
+ssh: connect to host 192.168.1.26 port 22: No route to host
+ssh: connect to host 192.168.1.26 port 22: No route to host
+Remote backup completed successfully!
