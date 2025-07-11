@@ -1,0 +1,12 @@
+@font-face {
+    font-family: 'BNazanin';
+    src: url('../fonts/BNazanin.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+body {
+    font-family: 'BNazanin', Tahoma, Arial, sans-serif;
+    direction: rtl;
+}
