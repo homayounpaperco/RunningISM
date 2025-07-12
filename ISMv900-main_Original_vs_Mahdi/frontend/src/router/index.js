@@ -20,6 +20,13 @@ import cancel from "@/components/admin/cancel.vue";
 import reportPage from "@/components/admin/reportPage.vue";
 import AllPages from "@/components/admin/AllPages.vue";
 import Products from "@/components/admin/Products.vue";
+import Login from "@/views/Login.vue";
+import OutgoingRemittance from "@/views/OutgoingRemittance.vue";
+// added by pre-developer
+// import AdminLogin from '@/components/admin/AdminLogin.vue'
+// import ReportLogin from '@/components/admin/ReportLogin.vue'
+// import Havaleh from '@/components/Havaleh.vue'
+// import salesorder from '@/components/salesorder.vue';
 
 const routes = [
   {
@@ -135,6 +142,34 @@ const routes = [
     name: 'Products',
     component: Products
   },
+  {
+    path: '/Login/',
+    name: 'Login',
+    component: Login
+  },
+  {
+    path: '/myapp/sales_invoice_template/',
+    name: 'sales_invoice_template',
+    component: () => import('../views/sales_invoice_template.vue')
+  },
+  {
+    path: '/myapp/outgoingRemittance/',
+    name: 'OutgoingRemittance',
+    component: OutgoingRemittance
+  },
+  // added by pre-developer
+  {
+    path: '/myapp/invoice/',
+    component: () => import('@/components/invoice.vue')
+  },
+  {
+    path: '/myapp/invoice/sales_order/',
+    component: () => import('@/components/salesorder.vue')
+  },
+  {
+    path: '/myapp/invoice/havaleh',
+    component: () => import('@/components/Havaleh.vue'),
+  },
 ]
 
 const router = createRouter({
@@ -143,4 +178,22 @@ const router = createRouter({
   routes,
 })
 
+// بررسی احراز هویت قبل از هر مسیریابی
+// router.beforeEach((to, from, next) => {
+//   if (to.matched.some(record => record.meta.requiresAuth)) {
+//     const token = localStorage.getItem('token')
+//     const isSuperuser = localStorage.getItem('is_superuser') === 'true'
+
+//     if (!token || !isSuperuser) {
+//       next({
+//         path: '/myapp/admin/login/',
+//         query: { redirect: to.fullPath }
+//       })
+//     } else {
+//       next()
+//     }
+//   } else {
+//     next()
+//   }
+// })
 export default router

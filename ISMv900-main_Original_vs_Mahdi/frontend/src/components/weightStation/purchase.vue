@@ -26,7 +26,7 @@ export default {
         quality: {type: 'input', name: 'کیفیت',title: 'مالیات بر ارزش افزوده', value: '', disabled:true},
         penalty: {type:'input', name: 'جریمه', title: 'جریمه', value: '', numbertype:true, lable:''},
         price_pre_kg: {type:'input', name: 'قیمت هر کیلوگرم', title: 'قیمت هر کیلوگرم', value: '', numbertype:true, lable:'number'},
-        vat: {type: 'dropdown', name: 'مالیات بر ارزش افزوده',title: 'مالیات بر ارزش افزوده', data: ['0%', '1%', '2%', '3%', '4%', '5%', '6%', '7%', '8%', '9%', '10%'], value: '0'},
+        vat: {type: 'dropdown', name: 'مالیات بر ارزش افزوده',title: 'مالیات بر ارزش افزوده', data: ['0%', '10%'], value: '0'},
         total_price: {type:'input', name: 'قمیت کل', title: 'قمیت کل', value: '', disabled:true, lable:'number'},
         extra_cost: {type:'input', name: 'هزینه اضافی', title: 'هزینه اضافی', value: '', numbertype:true, lable:'number'},
         invoice_status: {type: 'dropdown', name: 'وضعیت فاکتور',title: 'وضعیت فاکتور', data: ['Received', 'NA'], value: ''},
@@ -39,6 +39,7 @@ export default {
       success: false,
       error: false,
       errors: [],
+      originalNetWeight: '', // Store original net_weight value
     }
   },
   watch:{
@@ -71,7 +72,7 @@ export default {
     const params = {
       "status": 'Office',
       "location": 'Office',
-       'shipment_type': 'Incoming',
+      'shipment_type': 'Incoming',
     }
     this.axios.post('/myapp/api/getShipmentLicenseNumbers', {}, {params: params}).then((response) => {
       console.log('lics:',response.data)
@@ -88,7 +89,7 @@ export default {
       this.forms.price_pre_kg.value = this.formatNumber(this.forms.price_pre_kg.value);
     },
     clicked(k, name){
-      console.log(k, name)
+      // console.log(k, name)
       if (k == 'lic_number'){
         this.forms.lic_number.name = name
         this.forms.lic_number.value = name
@@ -150,7 +151,7 @@ export default {
         'commnet': this.forms.commnet.value,
         'username': this.forms.username.value,
       };
-      console.log(params)
+      // console.log(params)
       this.errors = []
       for (const key in this.forms) {
         if (this.forms[key].value == ''){
@@ -175,6 +176,45 @@ export default {
       } else {
         this.error = true
       }
+    },
+    edit_net_weight(){
+      // Store original value and enable editing
+      this.originalNetWeight = this.forms.net_weight.value;
+      this.forms.net_weight.disabled = false;
+    },
+    save_net_weight(){
+      // Format the number and save
+      this.forms.net_weight.value = this.formatNumber(this.forms.net_weight.value);
+      this.forms.net_weight.disabled = true;
+      console.log('Net weight updated:', this.forms.net_weight.value);
+      
+      // Make axios request to adjust net weight
+      const params = {
+        'license_number': this.forms.lic_number.value,
+        'net_weight': parseInt(this.forms.net_weight.value.replace(/,/g, '')),
+        'old_weight': this.originalNetWeight
+      };
+      
+      this.axios.post('/myapp/AdjustNetWeight/', {}, {params: params}).then((response) => {
+        console.log('Net weight adjustment response:', response.data);
+        if (response.data.status === 'success') {
+          console.log('Net weight adjusted successfully');
+          this.toast.success(response.data.message || 'وزن خالص با موفقیت به‌روزرسانی شد');
+        } else {
+          console.error('Error adjusting net weight:', response.data.message);
+          this.toast.error(response.data.message || 'خطا در به‌روزرسانی وزن خالص');
+        }
+      }).catch((error) => {
+        console.error('Error making request:', error);
+        this.toast.error('خطا در ارتباط با سرور');
+
+      });
+    },
+    cancel_net_weight(){
+      // Restore original value and disable editing
+      this.forms.net_weight.value = this.originalNetWeight;
+      this.forms.net_weight.disabled = true;
+      console.log('Net weight cancelled, restored to:', this.forms.net_weight.value);
     },
   }
 }
@@ -244,7 +284,7 @@ export default {
 <!--            </ul>-->
 <!--        </div>-->
 <!--        </template>-->
-                <template v-if="val.type=='input'">
+        <template v-if="val.type=='input'">
             <Input
               :formName="form_name"
               :label="val.name"
@@ -253,6 +293,29 @@ export default {
               @update="val.value = $event"
               :value="val.value"
             />
+            <template v-if="form_name == 'net_weight'"> 
+              <button
+                  v-if="val.disabled!=false"
+                  type="button"
+                  class="w-44 block text-white bg-green-500 hover:bg-green-600 focus:ring-4 focus:outline-none focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+                  @click="edit_net_weight">
+                      ویرایش
+              </button>           
+              <div v-if="val.disabled==false" class="flex flex-col gap-2">
+                <button
+                    type="button"
+                    class="w-44 block text-white bg-green-500 hover:bg-green-600 focus:ring-4 focus:outline-none focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+                    @click="save_net_weight">
+                        ثبت
+                </button>
+                <button
+                    type="button"
+                    class="w-44 block text-white bg-red-500 hover:bg-red-600 focus:ring-4 focus:outline-none focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-800"
+                    @click="cancel_net_weight">
+                        کنسل
+                </button>
+              </div>
+            </template>
         </template>
         <template v-if="val.type=='dropdown'">
           <Dropdown :formName="form_name">

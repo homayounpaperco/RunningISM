@@ -22,7 +22,7 @@ export default {
         loading_location: {type:'input', name: 'محل بار شده',title: 'محل بار شده', value: '', disabled:true},
         consuption_profile_name: {type:'input', name: 'اسم پوفایل مصرفی',title: 'اسم پوفایل مصرفی', value: '', disabled:true},
         price_pre_kg: {type:'input', name: 'قیمت هر کیلوگرم', title: 'قیمت هر کیلوگرم', value: '', numbertype:true, lable:'number'},
-        vat: {type: 'dropdown', name: 'مالیات بر ارزش افزوده',title: 'مالیات بر ارزش افزوده', data: ['0%', '1%', '2%', '3%', '4%', '5%', '6%', '7%', '8%', '9%', '10%'], value: '0'},
+        vat: {type: 'dropdown', name: 'مالیات بر ارزش افزوده',title: 'مالیات بر ارزش افزوده', data: ['0%', '10%'], value: '0'},
         total_price: {type:'input', name: 'قمیت کل',title: 'قمیت کل', value: '', disabled:true, lable:'number'},
         extra_cost: {type:'input', name: 'هزینه اضافی',title: 'هزینه اضافی', value: '', numbertype:true, lable:'number'},
         invoice_status: {type: 'dropdown', name: 'وضعیت فاکتور',title: 'وضعیت فاکتور', data: ['Sent', 'NA'], value: ''},
@@ -35,6 +35,7 @@ export default {
       success: false,
       error: false,
       errors: [],
+      outgoingRemittance_data: [],
     }
   },
   computed:{
@@ -67,10 +68,10 @@ export default {
   watch: {
     success(c, p) {
       if (c == true) {
-        setTimeout(() => {
-          this.success = false
-          location.reload();
-        }, 5000)
+        // setTimeout(() => {
+        //   this.success = false
+        //   location.reload();
+        // }, 5000)
       }
     },
   },
@@ -154,8 +155,9 @@ export default {
       if (this.errors.length == 0){
         this.error = false
         const response = await this.axios.post('/myapp/createSalesOrder/', {}, {params: params})
-        console.log(response.data); // Access response data
+        console.log(response.data['data']); // Access response data
         if (response.data['status'] == 'success'){
+          this.outgoingRemittance_data = response.data['data']
           this.success = true
         }else {
           this.error = true
@@ -164,6 +166,14 @@ export default {
       } else {
         this.error = true
       }
+    },
+    openOutgoingRemittance() {
+      // Encode the data to pass as URL parameter
+      const encodedData = encodeURIComponent(JSON.stringify(this.outgoingRemittance_data));
+      const url = `/myapp/outgoingRemittance/?data=${encodedData}`;
+      
+      // Open in new window
+      window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
     },
   }
 }
@@ -266,6 +276,15 @@ export default {
           </Dropdown>
         </template>
       </template>
+          <router-link to="/myapp/invoice/havaleh" type="button" class="w-44 block text-white bg-green-500 hover:bg-green-600 focus:ring-4 focus:outline-none focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800">حواله</router-link>
+          <router-link to="/myapp/invoice/sales_order"type="button" class="w-44 block text-white bg-green-500 hover:bg-green-600 focus:ring-4 focus:outline-none focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800">فروش</router-link>
+
+        <!-- <button 
+          @click="openOutgoingRemittance" 
+          class="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition duration-300"
+        >
+          باز کردن حواله خروج
+        </button> -->
       <modal type="confirm">
         <template v-slot:button>اضافه کردن</template>
         <template v-slot:text>

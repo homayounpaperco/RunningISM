@@ -20,6 +20,7 @@ import cancel from "@/components/admin/cancel.vue";
 import reportPage from "@/components/admin/reportPage.vue";
 import Card from "@/components/Card.vue";
 
+
 export default {
   name: "AllPages",
   components: {Card},
@@ -94,8 +95,12 @@ export default {
           path: '/myapp/ProductsPage/',
           name: 'ProductsPage',
         },
+        { path: '/myapp/invoice/', name: 'Invoice' } // Added the Invoice button
       ]
     }
+  },
+  mounted() {
+    
   }
 }
 </script>

@@ -3,7 +3,7 @@ import { initFlowbite } from 'flowbite'
 import Card from '@/components/Card'
 import modal from "@/components/Modal.vue";
 import Alert from "@/components/Alert.vue";
-import Lic_numer from "@/components/lic_numer.vue";
+import Lic_numer from "@/components/licenseNumber.vue";
 import { jsPDF } from "jspdf";
 import html2canvas from 'html2canvas';
 

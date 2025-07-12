@@ -3,8 +3,6 @@ import { initFlowbite } from 'flowbite'
 import Card from './Card'
 import modal from "@/components/Modal.vue";
 import Alert from "@/components/Alert.vue";
-import Lic_numer from "@/components/lic_numer.vue";
-import {LicenseNumberParser} from "@/components/lic_num_split";
 import Input from "@/components/custom/Input.vue";
 import Dropdown from "@/components/custom/Dropdown.vue";
 import ModalButton from "@/components/custom/ModalButton.vue";
@@ -14,7 +12,6 @@ export default {
   components: {
     ModalButton,
     Dropdown, Input,
-    Lic_numer,
     Card,
     modal,
     Alert

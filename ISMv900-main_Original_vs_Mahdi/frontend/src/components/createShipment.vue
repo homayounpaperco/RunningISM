@@ -3,15 +3,13 @@ import {initFlowbite, initDropdowns} from "flowbite";
 import modal from "@/components/Modal.vue";
 import Alert from "@/components/Alert.vue";
 import Card from "@/components/Card.vue";
-import Lic_numer from "@/components/lic_numer.vue";
-import {LicenseNumberParser, parseLicenseNumber} from "@/components/lic_num_split";
 import Input from "@/components/custom/Input.vue";
 import Dropdown from "@/components/custom/Dropdown.vue";
 import ModalButton from "@/components/custom/ModalButton.vue";
 
 export default {
   name: "createShipment",
-  components: {ModalButton, Dropdown, Input, Lic_numer, Card, Alert, modal},
+  components: {ModalButton, Dropdown, Input, Card, Alert, modal},
   data(){
     return {
       forms: {
