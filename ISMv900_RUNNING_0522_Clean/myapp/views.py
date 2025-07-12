@@ -1092,7 +1092,7 @@ def update_weight1(request):
     - username: The username of the user making the request, used for comments.
 
     It performs the following operations:
-    - Validates that the weight1 value is within the range of 9 to 42000 KG.
+    - Validates that the weight1 value is within the range of 9 to 38000 KG.
     - Retrieves the Shipments instance by its shipment_id.
     - Updates the weight1, weight1_time, and comments fields of the Shipments instance.
     - Saves the changes to the database.
@@ -1120,8 +1120,8 @@ def update_weight1(request):
             errors.append('نام کاربری را وارد کنید')
         # Convert weight1 to a decimal and validate the range
         weight1 = int(weight1)
-        if weight1 < 9 or weight1 > 42000:
-            errors.append('وزن وارد شده باید بین 9 تا 42000 کیلوگرم باشد.')
+        if weight1 < 9 or weight1 > 38000:
+            errors.append('وزن وارد شده باید بین 9 تا 38000 کیلوگرم باشد.')
 
         if errors:
             return JsonResponse({'status': 'error', 'errors': errors})
@@ -1210,8 +1210,8 @@ def update_weight2(request):
             net_weight = int(net_weight)
         except ValueError:
             errors.append({'status': 'error', 'message': 'وزن ثانویه و وزن خالص باید عدد باشند'})
-        if not (9 <= weight2 <= 42000) or not (9 <= net_weight <= 42000):
-            errors.append({'status': 'error', 'message': 'وزن ثاویه و وزن حالص  وارد شده باید بین 9 تا 42000 کیلوگرم باشند.'})
+        if not (9 <= weight2 <= 38000) or not (9 <= net_weight <= 38000):
+            errors.append({'status': 'error', 'message': 'وزن ثاویه و وزن حالص  وارد شده باید بین 9 تا 38000 کیلوگرم باشند.'})
         # Check if the absolute difference between weight1 and weight2 equals net_weight
         if abs(weight1 - weight2) != net_weight:
             errors.append({'status': 'error', 'message': 'تفاوت  بین وزن اولیه و وزن ثانویه باید با وزن خالص برابر باشد.'})
@@ -2205,7 +2205,6 @@ def moved(request):
 
 
                 if isEnough:
-                    # Alert here
                     required = abs(len(sourse) - int(Quantity))
                     msg = not_enough_message(
                         location=from_anbar,
@@ -2221,7 +2220,6 @@ def moved(request):
                     return JsonResponse({'status': 'error', 'errors': errors})
 
                 # Return a success response
-
                 return JsonResponse({'status': 'success', 'message': f'{Quantity} units of {material_name} have been moved from {from_anbar} to {to_anbar}.'})
 
             if real_or_raw == 'Reel':
@@ -2420,6 +2418,7 @@ def retuned(request):
                 return JsonResponse({'error': str(e)}, status=500)
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
+
 
 # Admin panel
 from django.contrib import admin
@@ -3048,7 +3047,7 @@ def generate_qrCode(request):
     img.save(file_path)
 
     buffer = BytesIO()
-    img.save(buffer, format="PNG")
+    img.save(buffer)
     buffer.seek(0)
     # Encode the binary data to base64
     image_base64 = base64.b64encode(buffer.read()).decode('utf-8')
@@ -3136,6 +3135,7 @@ def report_shipment(request):
                     'purchase_id_id',
                     'username',
                     'logs']
+
 
                 data = {'values': list(shipments), 'fields': field_names, 'title': 'لیست بارنامه',}
                 return JsonResponse(data=data, status=200)
@@ -3229,7 +3229,7 @@ def report_Purchases(request):
                      'material_name',
                      'unit',
                      'license_number',
-                     'receive_date',  # Assuming you want to set the current date/time
+                     'receive_date',
                      'quantity',
                      'quality',
                      'penalty',
@@ -3520,19 +3520,11 @@ def products_page(request):
                     products = model.objects.filter(receive_date__gte=hours_ago, receive_date__lt=current_time, status='In-stock', width__isnull=False)
                 else:
                     return JsonResponse({'status': 'error', 'message': 'Invalid filter type'}, status=400)
-                anbar_records = products.values('width', 'location', 'status').annotate(quantity=Count('id')).order_by('-width')
-                if anbar_records.exists():
-                    for raw in anbar_records:
-                    #     for field in datetime_fields:
-                    #         if field in raw and raw[field] is not None:
-                    #             # Convert to Shamsi date
-                    #             shamsi_date = jdatetime.datetime.fromgregorian(datetime=raw[field])
-                    #             # Update the field in the dictionary
-                    #             raw[field] = shamsi_date.strftime('%Y-%m-%d %H:%M')
 
-                        all_results.append(raw)
+                result = products.values('width', 'location', 'status').annotate(quantity=Count('id')).order_by('-width')
+                all_results.extend(result)
 
-            field_names = ['width', 'location','quantity', 'status',]
+            field_names = ['width', 'location', 'quantity', 'status',]
             # Now sort all_results by 'location' and then by 'width'
             # Sorting function
             def sorting_key(d):
@@ -3544,7 +3536,7 @@ def products_page(request):
 
             # print(sorted_results)
             # all_results = sorted(all_results, key=lambda x: x['width'])
-            data = {'values': sorted_results, 'fields': field_names , 'title': 'لیست محصولات', }
+            data = {'values': sorted_results, 'fields': field_names, 'title': 'لیست محصولات', }
             return JsonResponse(data=data, status=200)
             # Group by 'width', count the number of products in each group, and order by 'location'
 
@@ -3557,7 +3549,7 @@ def products_page(request):
             #     #             shamsi_date = jdatetime.datetime.fromgregorian(datetime=product[field])
             #     #             # Update the field in the dictionary
             #     #             product[field] = shamsi_date.strftime('%Y-%m-%d %H:%M')
-            #
+            #     #
             #     field_names =['width','grade', 'location', 'status']
             #
             #     data = {'values': list(products), 'fields': field_names, 'title': 'لیست محصولات',}
@@ -3566,32 +3558,5 @@ def products_page(request):
             #     return JsonResponse({'status': 'error', 'message': 'No product records found'}, status=404)
         else:
             return render(request, 'products_page.html')
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
-
-@csrf_exempt
-def log_weight_adjustment(request):
-    try:
-        # Get parameters from request
-        username = request.GET.get('username')
-        license_number = request.GET.get('license_number')
-        original_weight = request.GET.get('original_weight')
-        adjusted_weight = request.GET.get('adjusted_weight')
-        
-        # Create log entry
-        log = WeightAdjustmentLog.objects.create(
-            username=username,
-            license_number=license_number,
-            original_weight=original_weight,
-            adjusted_weight=adjusted_weight
-        )
-        
-        # Create alert for the weight adjustment
-        Alert.objects.create(
-            message=f'Weight adjusted for shipment {license_number} from {original_weight} to {adjusted_weight} by {username}',
-            status='Pending'
-        )
-        
-        return JsonResponse({'status': 'success', 'message': 'Weight adjustment logged'})
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)

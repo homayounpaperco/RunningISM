@@ -47,7 +47,6 @@ urlpatterns = [
     path("api/reportProducts", report_Products),
     path("api/reportConsumption", report_Consumption),
     path("api/reportAlert", report_Alert),
-    path('api/logWeightAdjustment', log_weight_adjustment, name='log_weight_adjustment'),
     path("ProductsPage/", products_page),
 
     # Following paths are related to Pages:
@@ -71,6 +70,5 @@ urlpatterns = [
     path("forkliftPanel/", forklift_panel),
     path("cancel/", cancel),
     path("report/", report_page),
-
-
 ]
+
