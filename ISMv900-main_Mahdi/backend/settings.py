@@ -40,8 +40,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # local app
     "myapp.apps.MyappConfig",
-    "channels",
-    "invoice.apps.InvoiceConfig"
+    "channels"
 ]
 
 MIDDLEWARE = [
@@ -85,15 +84,15 @@ DATABASES = {
     }
 }
 # DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'ISM',
-#         'USER': 'postgres',
-#         'PASSWORD': '62443444',
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#     }
-# }
+#    'default': {
+#        'ENGINE': 'django.db.backends.postgresql',
+#        'NAME': 'ISM',
+#        'USER': 'postgres',
+#        'PASSWORD': '62443444',
+#        'HOST': 'localhost',
+#        'PORT': '5432',
+#    }
+#}
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.postgresql',
