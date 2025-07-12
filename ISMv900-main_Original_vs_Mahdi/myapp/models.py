@@ -542,6 +542,7 @@ class Anbar_Khamir_Ghadim(AnbarGeneric):
         return f"{self.receive_date} - {self.reel_number}  - {self.width} - {self.supplier_name} - {self.material_type} - {self.material_name}- {self.unit} - {self.description} - {self.status} - {self.location}"
 
 
+
 class Anbar_Khamir_Kordan(AnbarGeneric):
     """
     Model representing an anbar item in Khamir Kordan.
@@ -579,6 +580,32 @@ class Anbar_Akhal(AnbarGeneric):
 
     def __str__(self):
         return f"{self.receive_date} - {self.reel_number}  - {self.width} - {self.supplier_name} - {self.material_type} - {self.material_name}- {self.unit} - {self.description} - {self.status} - {self.location}"
+
+
+class Anbar_PAK(AnbarGeneric):
+    """
+    Model representing an anbar item in PAK.
+    Inherits from AnbarGeneric to reuse common fields and behaviors.
+    """
+    class Meta:
+        verbose_name_plural = "Anbar PAK"
+        db_table = 'Anbar_PAK'
+
+    def __str__(self):
+        return f"{self.material_name} - {self.reel_number} - {self.location}"
+
+
+class Anbar_Muhavateh_Homayoun(AnbarGeneric):
+    """
+    Model representing an anbar item in Muhavateh Homayound.
+    Inherits from AnbarGeneric to reuse common fields and behaviors.
+    """
+    class Meta:
+        verbose_name_plural = "Anbar Muhavateh Homayoun"
+        db_table = 'Anbar_Muhavateh_Homayoun'
+
+    def __str__(self):
+        return f"{self.material_name} - {self.reel_number} - {self.location}"
 
 
 class Consumption(models.Model):

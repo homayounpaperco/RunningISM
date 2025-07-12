@@ -47,7 +47,8 @@ urlpatterns = [
     path("api/reportProducts", report_Products),
     path("api/reportConsumption", report_Consumption),
     path("api/reportAlert", report_Alert),
-    path("ProductsPage/", products_page),
+    path("api/alertsResolve", AlertStatusUpdateView.as_view(), name='resolve_alert'),
+    path("api/getUnreadAlerts", get_unread_alerts),
 
     # Following paths are related to Pages:
 
@@ -65,10 +66,14 @@ urlpatterns = [
     path("weightStationPanel/", weight_station_panel),
     path("updateWeight1/", update_weight1),
     path("updateWeight2/", update_weight2),
+    path("AdjustNetWeight/", AdjustNetWeight),
     path("createPurchaseOrder/", create_purchase_order),
     path("createSalesOrder/", create_sales_order),
     path("forkliftPanel/", forklift_panel),
     path("cancel/", cancel),
     path("report/", report_page),
+    path("sales_invoice_template/", SalesInvoice),
+    path("outgoingRemittance/", outgoing_remittance),
+    path("ProductsPage/", products_page),
 ]
 

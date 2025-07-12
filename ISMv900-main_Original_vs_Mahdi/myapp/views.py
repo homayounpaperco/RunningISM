@@ -7,6 +7,7 @@ from django.db.models import Count
 from django.http import JsonResponse
 from django.core.exceptions import ValidationError
 from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 from django.utils import timezone
 from django.db import connection
 from django.apps import apps
@@ -17,6 +18,12 @@ import jdatetime
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.forms.models import model_to_dict
+from django.shortcuts import redirect
+from django.contrib.auth import authenticate, login, logout
+from django.contrib import messages
+from django.views import View
+from django.urls import reverse
+
 
 # Create your views here.
 def get_time():
@@ -73,6 +80,68 @@ def not_enough_message(inventory, amount, required, transferred, location, actio
 
 # Operation API:
 
+def generate_response(data=None, message='successful', error=None, status_code=200):
+  """
+  Generates a dictionary representing a response object.
+
+  Args:
+      data (dict, optional): Data to include in the response. Defaults to None.
+      message (str, optional): Message to include in the response. Defaults to None.
+      error (str, optional): Error message to include in the response. Defaults to None.
+      status_code (int, optional): HTTP status code for the response. Defaults to 200.
+
+  Returns:
+      dict: A dictionary representing the response structure.
+  """
+
+  response = {'status_code': status_code}
+
+  if data:
+    response['data'] = data
+  if message:
+    response['message'] = message
+  if error:
+    response['error'] = error
+
+  return response
+
+@csrf_exempt
+def LoginView(request):
+    if request.method == 'POST':
+        username = request.GET.get('username')
+        password = request.GET.get('password')
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            login(request, user)
+            # Login successful
+            request.session['user_id'] = user.id
+            return JsonResponse(generate_response(message='successful'))
+        else:
+            # Login failed
+            return JsonResponse(generate_response(message='خطا در ورود: نام کاربری یا رمزعبور صحیح نیست!', error='Login failed', status_code=404), status=401)
+    else:
+        return render(request, 'Login.html')
+
+
+@csrf_exempt
+def LogoutView(request):
+    if request.method == 'POST':
+        logout(request)
+        return JsonResponse(generate_response(message='successful'))
+    else:
+        # Login failed
+        return JsonResponse(generate_response(error='Logout failed'))
+
+def login_required(view_func):
+    def wrapper(request, *args, **kwargs):
+        if request.user.is_authenticated:
+            return view_func(request, *args, **kwargs)
+        else:
+            # Get the current URL
+            current_url = request.get_full_path()
+            # Redirect to the 'Login' page with 'next' query parameter
+            return redirect(reverse('Login') + f'?next={current_url}')
+    return wrapper
 
 @csrf_exempt
 def check_license_number(request):
@@ -1210,8 +1279,8 @@ def update_weight2(request):
             net_weight = int(net_weight)
         except ValueError:
             errors.append({'status': 'error', 'message': 'وزن ثانویه و وزن خالص باید عدد باشند'})
-        if not (9 <= weight2 <= 38000) or not (9 <= net_weight <= 38000):
-            errors.append({'status': 'error', 'message': 'وزن ثاویه و وزن حالص  وارد شده باید بین 9 تا 38000 کیلوگرم باشند.'})
+        if not (9 <= weight2 <= 42000) or not (9 <= net_weight <= 42000):
+            errors.append({'status': 'error', 'message': 'وزن ثاویه و وزن حالص  وارد شده باید بین 9 تا 42000 کیلوگرم باشند.'})
         # Check if the absolute difference between weight1 and weight2 equals net_weight
         if abs(weight1 - weight2) != net_weight:
             errors.append({'status': 'error', 'message': 'تفاوت  بین وزن اولیه و وزن ثانویه باید با وزن خالص برابر باشد.'})
@@ -1241,7 +1310,7 @@ def update_weight2(request):
 @csrf_exempt
 def create_purchase_order(request):
     """
-    Handles the creation of a Purchase Order based on the provided algorithm.
+    Create a new purchase order based on the provided parameters.
     """
     if request.method == 'POST':
         try:
@@ -1385,6 +1454,204 @@ def create_purchase_order(request):
     else:
         return render(request, 'create_purchase_order.html')
 
+@csrf_exempt
+def AdjustNetWeight(request):
+    """
+    Adjust the net weight of a shipment.
+    """
+    if request.method == 'POST':
+        # Get parameters from the request
+        license_number = request.GET.get('license_number')
+        net_weight = request.GET.get('net_weight')
+        old_weight = request.GET.get('old_weight')
+        # username = request.GET.get('username', 'System') 
+
+        # Validate required fields
+        errors = []
+
+        try:
+            net_weight = int(net_weight)
+        except ValueError:
+            errors.append({'status': 'error', 'message': 'وزن خالص باید عدد باشد'})
+
+        if not (9 <= net_weight <= 42000):
+            errors.append({'status': 'error', 'message': 'وزن خالص وارد شده باید بین 9 تا 42000 کیلوگرم باشد.'})
+
+        if errors:
+            return JsonResponse({'status': 'error', 'errors': errors})
+
+        try:
+            # Update the Shipments instance
+            ship = Shipments.objects.filter(license_number=license_number, status='Office',location='Office', shipment_type='Incoming').first()
+            ship.weight=net_weight
+            ship.logs=ship[0].logs + log_generator(f'System', 'Adjust Net Weight from {net_weight} to {old_weight} for {license_number}')
+            
+            if ship:
+                ship.weight = net_weight
+                ship.logs = ship.logs + log_generator('System', 'AdjustNetWeight')
+                ship.save() 
+                # msg = f"وزن خالص محموله با شماره پلاک {license_number} با موفقیت به‌روزرسانی شد."
+                msg = "وزن خالص محموله با شماره پلاک {license_number} از {old_weight} به {net_weight} با موفقیت به‌روزرسانی شد."
+
+                not_enough_alert(msg)
+                return JsonResponse({'status': 'success', 'message': f'وزن خالص محموله با شماره پلاک {license_number} با موفقیت به‌روزرسانی شد.'})
+            else:
+                return JsonResponse({'status': 'error', 'message': f'محموله با شماره پلاک {license_number} یافت نشد.'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'خطا در به‌روزرسانی وزن خالص: {str(e)}'})
+    else:
+        return JsonResponse({'status': 'error', 'message': 'متد درخواست باید POST باشد'})
+
+# @csrf_exempt
+# def create_sales_order(request):
+#     """
+#     Function to create a Sales Order and update related entities based on the provided algorithm.
+#     """
+#     if request.method == 'POST':
+#         # Assuming the request data is in JSON format
+#         license_number = request.GET.get('lic_number')
+#         customer_name = request.GET.get('customer_name')
+#         list_of_reels = request.GET.get('list_of_reels')
+#         weight1 = request.GET.get('weight1')
+#         weight2 = request.GET.get('weight2')
+#         net_weight = request.GET.get('net_weight')
+#         loading_location = request.GET.get('loading_location')
+#         consuption_profile_name = request.GET.get('consuption_profile_name')
+#         price_pre_kg = request.GET.get('price_pre_kg')
+#         vat = request.GET.get('vat')
+#         total_price = request.GET.get('total_price')
+#         extra_cost = request.GET.get('extra_cost')
+#         invoice_status = request.GET.get('invoice_status')
+#         invoice_number = request.GET.get('invoice_number')
+#         payment_status = request.GET.get('payment_status')
+#         document_info = request.GET.get('document_info')
+#         comments = request.GET.get('commnet')
+#         username = request.GET.get('username')
+
+#         errors = []
+#         if not license_number:
+#             errors.append({'status':'error', 'message': 'پلاک را انتخاب کنید'})
+#         if not customer_name:
+#             errors.append({'status':'error', 'message': 'اسم مشتری مورد نیاز است'})
+#         if not list_of_reels:
+#             errors.append({'status':'error', 'message': ''})
+#         if not weight1:
+#             errors.append({'status':'error', 'message': 'وزن اولیه مورد نیاز است'})
+#         if not weight2:
+#             errors.append({'status':'error', 'message': 'وزن ثانویه مورد نیاز است'})
+#         if not net_weight:
+#             errors.append({'status':'error', 'message': 'وزن خالص مورد نیاز است'})
+#         if not loading_location:
+#             errors.append({'status':'error', 'message': 'محل تخلیه شده مورد نیاز است'})
+#         if not consuption_profile_name:
+#             errors.append({'status':'error', 'message': 'پروفایل مصرفی مورد نیاز است'})
+#         if not price_pre_kg:
+#             errors.append({'status':'error', 'message': 'مقدار قیمت هر کیلوگرم را وارد کنید'})
+#         if not vat:
+#             errors.append({'status':'error', 'message': 'مقدار مالیات بر ارزش افزوده را انتحاب کنید'})
+#         if not total_price:
+#             errors.append({'status':'error', 'message': 'مقدار قمیت کل را وارد کنید'})
+#         if not extra_cost:
+#             errors.append({'status':'error', 'message': ' مقدار هزینه اضافی را وارد کنید'})
+#         if not invoice_status:
+#             errors.append({'status':'error', 'message': 'وضعیت فاکتور را انتخاب کنید'})
+#         if not invoice_number:
+#             errors.append({'status':'error', 'message': 'شماره فاکتور را وارد کنید'})
+#         if not payment_status:
+#             errors.append({'status':'error', 'message': 'وضعیت پرداخت را انتخاب کنید'})
+#         if not document_info:
+#             errors.append({'status':'error', 'message': 'اظلاعات سند را وارد کنید'})
+
+#         if not username:
+#             errors.append({'status':'error', 'message': 'فرم نام کاربری را پر کنید'})
+#         if errors:
+#             print({'status': 'error', 'errors': errors})
+#             return JsonResponse({'status': 'error', 'errors': errors})
+#         else:
+#             try:
+#                 ship = Shipments.objects.filter(license_number=license_number, status='Office', location='Office', shipment_type='Outgoing')
+#                 # Create a new instance of the Sales model
+#                 sale = Sales(
+#                     customer_name=customer_name,
+#                     license_number=license_number,
+#                     list_of_reels=list_of_reels,
+#                     profile_name=consuption_profile_name,
+#                     weight1=weight1,
+#                     weight2=weight2,
+#                     net_weight=net_weight,
+#                     price_per_kg=price_pre_kg,
+#                     vat=vat,
+#                     width=ship[0].width,
+#                     total_price=total_price,
+#                     extra_cost=extra_cost,
+#                     invoice_status=invoice_status,
+#                     invoice_number=invoice_number,
+#                     status=payment_status,
+#                     document_info=document_info,
+#                     comments=comments,
+#                     username=username,
+#                     shipment=ship[0],
+#                     date=get_time(),  # Assuming you want to set the current date and time
+#                     logs=log_generator(username, 'Created SO') + append_log({'comments': comments}, 'SO')
+#                 )
+#                 # Save the instance
+#                 sale.save()
+
+#                 # Retrieve the shipment instance
+
+#                 ship.update(
+#                     status='Delivered',
+#                     location='Delivered',
+#                     sales_id=sale.id,
+#                     price_per_kg=price_pre_kg,
+#                     total_price=total_price,
+#                     vat=vat,
+#                     extra_cost=extra_cost,
+#                     invoice_status=invoice_status,
+#                     payment_status=payment_status,
+#                     document_info=document_info,
+#                     exit_time=get_time(),
+#                     comments=comments,
+#                     logs=ship[0].logs + log_generator(username, 'Created SO') + append_log({'comments': comments}, 'SO')
+#                 )
+#                 # Update truck status and location
+#                 Truck.objects.filter(license_number=license_number).update(
+#                     status='Free',
+#                     location=customer_name
+#                 )
+#                 list_of_reels = list(map(int, list_of_reels.split(',')))
+#                 # print(list_of_reels)
+#                 for reel in list_of_reels:
+#                     products = Products.objects.filter(reel_number=reel)
+#                     products.update(
+#                         status='Delivered',
+#                         location=customer_name,
+#                         last_date=get_time(),
+#                         logs=products[0].logs + log_generator(username, 'Created SO')
+#                     )
+#                     # Dynamically get the model based on the anbar_name
+#                     AnbarModel = apps.get_model('myapp', loading_location)
+#                     anbar = AnbarModel.objects.filter(reel_number=reel)
+#                     anbar.update(
+#                         status='Delivered',
+#                         location=customer_name,
+#                         last_date=get_time(),
+#                         logs=anbar[0].logs + log_generator(username, 'Created SO')
+#                     )
+
+#                 # Return a success response
+#                 return JsonResponse({'status': 'success', 'message': 'Sales Order created successfully.'})
+#             except Shipments.DoesNotExist:
+#                 return JsonResponse({'status': 'error', 'message': 'Shipments not found.'}, status=404)
+#             except Exception as e:
+#                 print(Exception)
+#                 print(e)
+#                 errors.append({'status': 'error', 'message': str(e)})
+#                 return JsonResponse({'status': 'error', 'errors': errors})
+#                 # return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+#     else:
+#         return render(request, 'create_sales_order.html')
+
 
 @csrf_exempt
 def create_sales_order(request):
@@ -1392,7 +1659,9 @@ def create_sales_order(request):
     Function to create a Sales Order and update related entities based on the provided algorithm.
     """
     if request.method == 'POST':
-        # Assuming the request data is in JSON format
+        # Assuming the request data is in JSON format,
+        # it's generally better to use request.POST for form data or json.loads(request.body) for JSON payloads.
+        # For demonstration, I'll stick with request.GET.get() for now, but be aware of this.
         license_number = request.GET.get('lic_number')
         customer_name = request.GET.get('customer_name')
         list_of_reels = request.GET.get('list_of_reels')
@@ -1400,8 +1669,8 @@ def create_sales_order(request):
         weight2 = request.GET.get('weight2')
         net_weight = request.GET.get('net_weight')
         loading_location = request.GET.get('loading_location')
-        consuption_profile_name = request.GET.get('consuption_profile_name')
-        price_pre_kg = request.GET.get('price_pre_kg')
+        consumption_profile_name = request.GET.get('consuption_profile_name') # Corrected typo
+        price_per_kg = request.GET.get('price_pre_kg')
         vat = request.GET.get('vat')
         total_price = request.GET.get('total_price')
         extra_cost = request.GET.get('extra_cost')
@@ -1409,131 +1678,179 @@ def create_sales_order(request):
         invoice_number = request.GET.get('invoice_number')
         payment_status = request.GET.get('payment_status')
         document_info = request.GET.get('document_info')
-        comments = request.GET.get('commnet')
+        comments = request.GET.get('commnet') # Original typo preserved, consider renaming to 'comment'
         username = request.GET.get('username')
 
         errors = []
+        # --- Validation Checks ---
         if not license_number:
-            errors.append({'status':'error', 'message': 'پلاک را انتخاب کنید'})
+            errors.append({'status': 'error', 'message': 'پلاک را انتخاب کنید'})
         if not customer_name:
-            errors.append({'status':'error', 'message': 'اسم مشتری مورد نیاز است'})
+            errors.append({'status': 'error', 'message': 'اسم مشتری مورد نیاز است'})
         if not list_of_reels:
-            errors.append({'status':'error', 'message': ''})
+            errors.append({'status': 'error', 'message': 'لیست رول‌ها مورد نیاز است'}) # Added missing message
         if not weight1:
-            errors.append({'status':'error', 'message': 'وزن اولیه مورد نیاز است'})
+            errors.append({'status': 'error', 'message': 'وزن اولیه مورد نیاز است'})
         if not weight2:
-            errors.append({'status':'error', 'message': 'وزن ثانویه مورد نیاز است'})
+            errors.append({'status': 'error', 'message': 'وزن ثانویه مورد نیاز است'})
         if not net_weight:
-            errors.append({'status':'error', 'message': 'وزن خالص مورد نیاز است'})
+            errors.append({'status': 'error', 'message': 'وزن خالص مورد نیاز است'})
         if not loading_location:
-            errors.append({'status':'error', 'message': 'محل تخلیه شده مورد نیاز است'})
-        if not consuption_profile_name:
-            errors.append({'status':'error', 'message': 'پروفایل مصرفی مورد نیاز است'})
-        if not price_pre_kg:
-            errors.append({'status':'error', 'message': 'مقدار قیمت هر کیلوگرم را وارد کنید'})
+            errors.append({'status': 'error', 'message': 'محل تخلیه شده مورد نیاز است'})
+        if not consumption_profile_name:
+            errors.append({'status': 'error', 'message': 'پروفایل مصرفی مورد نیاز است'})
+        if not price_per_kg:
+            errors.append({'status': 'error', 'message': 'مقدار قیمت هر کیلوگرم را وارد کنید'})
         if not vat:
-            errors.append({'status':'error', 'message': 'مقدار مالیات بر ارزش افزوده را انتحاب کنید'})
+            errors.append({'status': 'error', 'message': 'مقدار مالیات بر ارزش افزوده را انتخاب کنید'})
         if not total_price:
-            errors.append({'status':'error', 'message': 'مقدار قمیت کل را وارد کنید'})
+            errors.append({'status': 'error', 'message': 'مقدار قیمت کل را وارد کنید'})
         if not extra_cost:
-            errors.append({'status':'error', 'message': ' مقدار هزینه اضافی را وارد کنید'})
+            errors.append({'status': 'error', 'message': 'مقدار هزینه اضافی را وارد کنید'})
         if not invoice_status:
-            errors.append({'status':'error', 'message': 'وضعیت فاکتور را انتخاب کنید'})
+            errors.append({'status': 'error', 'message': 'وضعیت فاکتور را انتخاب کنید'})
         if not invoice_number:
-            errors.append({'status':'error', 'message': 'شماره فاکتور را وارد کنید'})
+            errors.append({'status': 'error', 'message': 'شماره فاکتور را وارد کنید'})
         if not payment_status:
-            errors.append({'status':'error', 'message': 'وضعیت پرداخت را انتخاب کنید'})
+            errors.append({'status': 'error', 'message': 'وضعیت پرداخت را انتخاب کنید'})
         if not document_info:
-            errors.append({'status':'error', 'message': 'اظلاعات سند را وارد کنید'})
-
+            errors.append({'status': 'error', 'message': 'اطلاعات سند را وارد کنید'})
         if not username:
-            errors.append({'status':'error', 'message': 'فرم نام کاربری را پر کنید'})
+            errors.append({'status': 'error', 'message': 'فرم نام کاربری را پر کنید'})
+
         if errors:
+            print({'status': 'error', 'errors': errors})
             return JsonResponse({'status': 'error', 'errors': errors})
         else:
             try:
-                ship = Shipments.objects.filter(license_number=license_number, status='Office', location='Office', shipment_type='Outgoing')
+                # Use .first() to get an object or None, avoiding IndexError
+                shipment_instance = Shipments.objects.filter(
+                    license_number=license_number,
+                    status='Office',
+                    location='Office',
+                    shipment_type='Outgoing'
+                ).first()
+
+                if not shipment_instance:
+                    return JsonResponse({'status': 'error', 'message': 'Shipment not found or does not meet criteria.'}, status=404)
+
                 # Create a new instance of the Sales model
                 sale = Sales(
                     customer_name=customer_name,
                     license_number=license_number,
                     list_of_reels=list_of_reels,
-                    profile_name=consuption_profile_name,
+                    profile_name=consumption_profile_name,
                     weight1=weight1,
                     weight2=weight2,
                     net_weight=net_weight,
-                    price_per_kg=price_pre_kg,
+                    price_per_kg=price_per_kg,
                     vat=vat,
-                    width=ship[0].width,
+                    width=shipment_instance.width, # Use shipment_instance here
                     total_price=total_price,
                     extra_cost=extra_cost,
                     invoice_status=invoice_status,
                     invoice_number=invoice_number,
-                    status=payment_status,
+                    status=payment_status, # Renamed to avoid confusion with invoice_status
                     document_info=document_info,
                     comments=comments,
                     username=username,
-                    shipment=ship[0],
-                    date=get_time(),  # Assuming you want to set the current date and time
+                    shipment=shipment_instance, # Link to the found shipment instance
+                    date=get_time(),
                     logs=log_generator(username, 'Created SO') + append_log({'comments': comments}, 'SO')
                 )
-                # Save the instance
                 sale.save()
 
-                # Retrieve the shipment instance
+                # Update the shipment instance directly
+                shipment_instance.status = 'Delivered'
+                shipment_instance.location = 'Delivered'
+                shipment_instance.sales_id = sale.id
+                shipment_instance.price_per_kg = price_per_kg
+                shipment_instance.total_price = total_price
+                shipment_instance.vat = vat
+                shipment_instance.extra_cost = extra_cost
+                shipment_instance.invoice_status = invoice_status
+                shipment_instance.payment_status = payment_status
+                shipment_instance.document_info = document_info
+                shipment_instance.exit_time = get_time()
+                shipment_instance.comments = comments
+                shipment_instance.logs = shipment_instance.logs + log_generator(username, 'Created SO') + append_log({'comments': comments}, 'SO')
+                shipment_instance.save() # Save the updated instance
 
-                ship.update(
-                    status='Delivered',
-                    location='Delivered',
-                    sales_id=sale.id,
-                    price_per_kg=price_pre_kg,
-                    total_price=total_price,
-                    vat=vat,
-                    extra_cost=extra_cost,
-                    invoice_status=invoice_status,
-                    payment_status=payment_status,
-                    document_info=document_info,
-                    exit_time=get_time(),
-                    comments=comments,
-                    logs=ship[0].logs + log_generator(username, 'Created SO') + append_log({'comments': comments}, 'SO')
-                )
                 # Update truck status and location
-                Truck.objects.filter(license_number=license_number).update(
-                    status='Free',
-                    location=customer_name
-                )
-                list_of_reels = list(map(int, list_of_reels.split(',')))
-                # print(list_of_reels)
-                for reel in list_of_reels:
-                    products = Products.objects.filter(reel_number=reel)
-                    products.update(
-                        status='Delivered',
-                        location=customer_name,
-                        last_date=get_time(),
-                        logs=products[0].logs + log_generator(username, 'Created SO')
-                    )
-                    # Dynamically get the model based on the anbar_name
-                    AnbarModel = apps.get_model('myapp', loading_location)
-                    anbar = AnbarModel.objects.filter(reel_number=reel)
-                    anbar.update(
-                        status='Delivered',
-                        location=customer_name,
-                        last_date=get_time(),
-                        logs=anbar[0].logs + log_generator(username, 'Created SO')
-                    )
-                # Return a success response
-                return JsonResponse({'status': 'success', 'message': 'Sales Order created successfully.'})
+                # Truck.objects.filter(license_number=license_number).update(
+                #     status='Free',
+                #     location=customer_name
+                # )
+                # --- Fetch Truck Instance for driver_name ---
+                truck_instance = Truck.objects.filter(license_number=license_number).first()
+                driver_name = truck_instance.driver_name if truck_instance else None
+                # Update truck status and location (this part remains the same)
+                if truck_instance: # Only update if truck_instance was found
+                    truck_instance.status = 'Free'
+                    truck_instance.location = customer_name
+                    truck_instance.save()
 
-            except Shipments.DoesNotExist:
-                return JsonResponse({'status': 'error', 'message': 'Shipments not found.'}, status=404)
+
+                list_of_reels_int = list(map(int, list_of_reels.split(',')))
+                outgoing_product_data = []
+                for reel in list_of_reels_int:
+                    product_instance = Products.objects.filter(reel_number=reel).first() # Use .first()
+                    if product_instance:
+                        product_instance.status = 'Delivered'
+                        product_instance.location = customer_name
+                        product_instance.last_date = get_time()
+                        product_instance.logs = product_instance.logs + log_generator(username, 'Created SO')
+                        product_instance.save() # Save the updated product
+                        outgoing_product_data.append({
+                            'width': product_instance.width,
+                            'gsm': product_instance.gsm,
+                            'length': product_instance.length,
+                            'grade': product_instance.grade,
+                            'breaks': product_instance.breaks,
+                            'profile_name': product_instance.profile_name,
+                            'reel_number': product_instance.reel_number,
+                        })
+                        # Dynamically get the model based on the anbar_name (loading_location)
+                        # Ensure 'myapp' is the correct app name where your Anbar models reside
+                        AnbarModel = apps.get_model('myapp', loading_location)
+                        anbar_instance = AnbarModel.objects.filter(reel_number=reel).first() # Use .first()
+                        if anbar_instance:
+                            anbar_instance.status = 'Delivered'
+                            anbar_instance.location = customer_name
+                            anbar_instance.last_date = get_time()
+                            anbar_instance.logs = anbar_instance.logs + log_generator(username, 'Created SO')
+                            anbar_instance.save() # Save the updated anbar
+
+                # --- Data to be passed to the response ---
+                # shamsi_date = jdatetime.datetime.fromgregorian(datetime=sale.date)
+                # Update the field in the dictionary
+                # date = shamsi_date.strftime('%Y-%m-%d %H:%M')
+                date = sale.date
+                data = {
+                    'customer_name': customer_name,
+                    'license_number': license_number,
+                    'list_of_reels': list_of_reels,
+                    'invoice_number': invoice_number,
+                    'net_weight': net_weight,
+                    'quantity': shipment_instance.quantity,
+                    'quality': shipment_instance.quality,
+                    'width': shipment_instance.width,
+                    'total_price': shipment_instance.total_price, # Using shipment_instance's total_price
+                    'material_type': shipment_instance.material_type,
+                    'material_name': shipment_instance.material_name,
+                    'date': date,
+                    'driver_name': driver_name,
+                    'outgoing_product_data':outgoing_product_data
+                }
+                print(data)
+                return JsonResponse({'status': 'success', 'message': 'Sales Order created successfully.', 'data': data})
+
             except Exception as e:
-                # print(e)
-                errors.append({'status': 'error', 'message': str(e)})
-                return JsonResponse({'status': 'error', 'errors': errors})
-                # return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+                print(f"An unexpected error occurred: {e}") # More specific print for debugging
+                errors.append({'status': 'error', 'message': f"An unexpected error occurred: {str(e)}"})
+                return JsonResponse({'status': 'error', 'errors': errors}, status=500)
     else:
         return render(request, 'create_sales_order.html')
-
 
 def get_anbar_table_names(request):
     if request.method == 'GET':
@@ -2709,7 +3026,7 @@ def add_consumption_profile(request):
         # Handle non-POST requests
         return render(request, 'add_consumption_profile.html')
 
-
+@login_required
 @csrf_exempt
 def cancel(request):
     if request.method == 'POST':
@@ -2952,12 +3269,27 @@ def loadReportData(request):
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method.'}, status=400)
 
-@csrf_exempt
+@login_required
 def report_page(request):
     if request.method == 'POST':
         pass
     else:
         return render(request, 'report_page.html')
+
+@csrf_exempt
+def outgoing_remittance(request):
+    if request.method == 'POST':
+        pass
+    else:
+        return render(request, 'outgoing_remittance.html')
+
+
+@csrf_exempt
+def SalesInvoice(request):
+    if request.method == 'POST':
+        pass
+    else:
+        return render(request, 'sales_invoice_template.html')
 
 
 from django.http import JsonResponse
@@ -3016,7 +3348,7 @@ from django.http import HttpResponse
 import base64
 # from qrcode.image.pil import PilImage
 
-@csrf_exempt
+# @csrf_exempt
 def generate_qrCode(request):
     # print(json.loads(dict(request.GET)))
     # Data to encode
@@ -3055,6 +3387,9 @@ def generate_qrCode(request):
     return JsonResponse({'status': 'succeses', 'filename': file_path, 'file':image_base64})
 
 
+
+
+
 datetime_fields = ['receive_date', 'entry_time', 'weight1_time', 'weight2_time', 'exit_time', 'date', 'payment_date']
 
 
@@ -3071,76 +3406,137 @@ def report_shipment(request):
             filter_type = request.GET.get('filter')
             current_time = timezone.now()
 
+            # Pagination parameters
+            page = int(request.GET.get('page', 1))
+            page_size = int(request.GET.get('page_size', 10))
+            
+            # Search parameter
+            search_query = request.GET.get('search', '').strip()
+            
+            # Validate pagination parameters
+            if page < 1:
+                page = 1
+            if page_size < 1 or page_size > 100:
+                page_size = 10
 
             if filter_type == 'year':
-                shipments = Shipments.objects.filter(receive_date__year=current_time.year).exclude(status='Cancelled').exclude(status='Delivered').values()
+                shipments_queryset = Shipments.objects.filter(receive_date__year=current_time.year).exclude(status='Cancelled').exclude(status='Delivered')
             elif filter_type == 'month':
-                shipments = Shipments.objects.filter(receive_date__month=current_time.month).exclude(status='Cancelled').exclude(status='Delivered').values()
+                shipments_queryset = Shipments.objects.filter(receive_date__month=current_time.month).exclude(status='Cancelled').exclude(status='Delivered')
             elif filter_type == 'week':
                 start_of_last_week = current_time - timedelta(days=6)
                 end_of_last_week = current_time
-                shipments = Shipments.objects.filter(receive_date__range=(start_of_last_week, end_of_last_week)).exclude(status='Cancelled').exclude(status='Delivered').values()
+                shipments_queryset = Shipments.objects.filter(receive_date__range=(start_of_last_week, end_of_last_week)).exclude(status='Cancelled').exclude(status='Delivered')
             elif filter_type == 'day':
                 hours_ago = current_time - timedelta(hours=24)
-                shipments = Shipments.objects.filter(receive_date__gte=hours_ago, receive_date__lt=current_time).exclude(status='Cancelled').exclude(status='Delivered').values()
+                shipments_queryset = Shipments.objects.filter(receive_date__gte=hours_ago, receive_date__lt=current_time).exclude(status='Cancelled').exclude(status='Delivered')
             else:
                 return JsonResponse({'status': 'error', 'message': 'Invalid filter type'}, status=400)
 
-            if shipments.exists():
-                for shipment in shipments:
+            # Apply search filter if search query is provided
+            if search_query:
+                from django.db.models import Q
+                shipments_queryset = shipments_queryset.filter(
+                    Q(license_number__icontains=search_query) |
+                    Q(customer_name__icontains=search_query) |
+                    Q(supplier_name__icontains=search_query) |
+                    Q(material_type__icontains=search_query) |
+                    Q(material_name__icontains=search_query) |
+                    Q(status__icontains=search_query) |
+                    Q(location__icontains=search_query) |
+                    Q(profile_name__icontains=search_query)
+                )
+
+            # Calculate pagination
+            total_count = shipments_queryset.count()
+            total_pages = (total_count + page_size - 1) // page_size
+            
+            if total_count == 0:
+                return JsonResponse({'status': 'error', 'message': 'No shipment records found'}, status=404)
+            
+            # Apply search filter if search query is provided
+            if search_query:
+                from django.db.models import Q
+                shipments_queryset = shipments_queryset.filter(
+                    Q(license_number__icontains=search_query) |
+                    Q(customer_name__icontains=search_query) |
+                    Q(supplier_name__icontains=search_query) |
+                    Q(material_type__icontains=search_query) |
+                    Q(material_name__icontains=search_query) |
+                    Q(status__icontains=search_query) |
+                    Q(location__icontains=search_query) |
+                    Q(profile_name__icontains=search_query)
+                )
+            
+            # Apply pagination
+            start_index = (page - 1) * page_size
+            end_index = start_index + page_size
+            shipments_paginated = shipments_queryset[start_index:end_index].values()
+
+            # Convert dates to Shamsi format
+            for shipment in shipments_paginated:
                     for field in datetime_fields:
                         if field in shipment and shipment[field] is not None:
                             # Convert to Shamsi date
                             shamsi_date = jdatetime.datetime.fromgregorian(datetime=shipment[field])
                             # Update the field in the dictionary
                             shipment[field] = shamsi_date.strftime('%Y-%m-%d %H:%M')
-                # field_names = [k for k in list(shipments)[0]]
-                # print(field_names)
-                field_names = [
-                    'status',
-                    'location',
-                    'license_number',
-                    'unload_location',
-                    'quality',
-                    'shipment_type',
-                    'customer_name',
-                    'supplier_name',
-                    'entry_time',
-                    'weight1',
-                    'weight1_time',
-                    'unit',
-                    'quantity',
-                    'width',
-                    'list_of_reels',
-                    'weight2',
-                    'weight2_time',
-                    'net_weight',
-                    'price_per_kg',
-                    'vat',
-                    'total_price',
-                    'penalty',
-                    'extra_cost',
-                    'exit_time',
-                    'receive_date',
-                    'date',
-                    'profile_name',
-                    'material_type',
-                    'material_name',
-                    'invoice_status',
-                    'payment_status',
-                    'document_info',
-                    'comments',
-                    'cancellation_reason',
-                    'sales_id',
-                    'purchase_id_id',
-                    'username',
-                    'logs']
 
+            field_names = [
+                'status',
+                'location',
+                'license_number',
+                'unload_location',
+                'quality',
+                'shipment_type',
+                'customer_name',
+                'supplier_name',
+                'entry_time',
+                'weight1',
+                'weight1_time',
+                'unit',
+                'quantity',
+                'width',
+                'list_of_reels',
+                'weight2',
+                'weight2_time',
+                'net_weight',
+                'price_per_kg',
+                'vat',
+                'total_price',
+                'penalty',
+                'extra_cost',
+                'exit_time',
+                'receive_date',
+                'date',
+                'profile_name',
+                'material_type',
+                'material_name',
+                'invoice_status',
+                'payment_status',
+                'document_info',
+                'comments',
+                'cancellation_reason',
+                'sales_id',
+                'purchase_id_id',
+                'username',
+                'logs'
+            ]
 
-                data = {'values': list(shipments), 'fields': field_names, 'title': 'لیست بارنامه',}
-                return JsonResponse(data=data, status=200)
-            else:
-                return JsonResponse({'status': 'error', 'message': 'No shipment records found'}, status=404)
+            data = {
+                'values': list(shipments_paginated), 
+                'fields': field_names, 
+                'title': 'لیست بارنامه',
+                'pagination': {
+                    'current_page': page,
+                    'page_size': page_size,
+                    'total_count': total_count,
+                    'total_pages': total_pages,
+                    'has_next': page < total_pages,
+                    'has_previous': page > 1
+                }
+            }
+            return JsonResponse(data=data, status=200)
         else:
             return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
     except Exception as e:
@@ -3154,34 +3550,81 @@ def report_Sales(request):
             filter_type = request.GET.get('filter')
             current_time = timezone.now()
 
+            # Pagination parameters
+            page = int(request.GET.get('page', 1))
+            page_size = int(request.GET.get('page_size', 10))
+            
+            # Search parameter
+            search_query = request.GET.get('search', '').strip()
+            
+            # Validate pagination parameters
+            if page < 1:
+                page = 1
+            if page_size < 1 or page_size > 100:
+                page_size = 10
 
             if filter_type == 'year':
-                sales = Sales.objects.filter(date__year=current_time.year).exclude(status='Cancelled').values()
+                sales_queryset = Sales.objects.filter(date__year=current_time.year).exclude(status='Cancelled')
             elif filter_type == 'month':
-                sales = Sales.objects.filter(date__month=current_time.month).exclude(status='Cancelled').values()
+                sales_queryset = Sales.objects.filter(date__month=current_time.month).exclude(status='Cancelled')
             elif filter_type == 'week':
                 start_of_last_week = current_time - timedelta(days=6)
                 end_of_last_week = current_time
-                sales = Sales.objects.filter(date__range=(start_of_last_week, end_of_last_week)).exclude(status='Cancelled').values()
+                sales_queryset = Sales.objects.filter(date__range=(start_of_last_week, end_of_last_week)).exclude(status='Cancelled')
             elif filter_type == 'day':
                 hours_ago = current_time - timedelta(hours=24)
-                sales = Sales.objects.filter(date__gte=hours_ago, date__lt=current_time).exclude(status='Cancelled').values()
+                sales_queryset = Sales.objects.filter(date__gte=hours_ago, date__lt=current_time).exclude(status='Cancelled')
             else:
                 return JsonResponse({'status': 'error', 'message': 'Invalid filter type'}, status=400)
 
-            if sales.exists():
-                for sale in sales:
+            # Apply search filter if search query is provided
+            if search_query:
+                from django.db.models import Q
+                sales_queryset = sales_queryset.filter(
+                    Q(customer_name__icontains=search_query) |
+                    Q(license_number__icontains=search_query) |
+                    Q(profile_name__icontains=search_query) |
+                    Q(status__icontains=search_query) |
+                    Q(invoice_number__icontains=search_query) |
+                    Q(list_of_reels__icontains=search_query)
+                )
+
+            # Calculate pagination
+            total_count = sales_queryset.count()
+            total_pages = (total_count + page_size - 1) // page_size
+            
+            if total_count == 0:
+                return JsonResponse({'status': 'error', 'message': 'No sale records found'}, status=404)
+            
+            # Apply pagination
+            start_index = (page - 1) * page_size
+            end_index = start_index + page_size
+            sales_paginated = sales_queryset[start_index:end_index].values()
+
+            # Convert dates to Shamsi format
+            for sale in sales_paginated:
                     for field in datetime_fields:
                         if field in sale and sale[field] is not None:
                             # Convert to Shamsi date
                             shamsi_date = jdatetime.datetime.fromgregorian(datetime=sale[field])
                             # Update the field in the dictionary
                             sale[field] = shamsi_date.strftime('%Y-%m-%d %H:%M')
-                field_names = [k for k in list(sales)[0]]
-                data = {'values': list(sales), 'fields': field_names, 'title': 'لیست فروش',}
-                return JsonResponse(data=data, status=200)
-            else:
-                return JsonResponse({'status': 'error', 'message': 'No sale records found'}, status=404)
+            
+            field_names = [k for k in list(sales_paginated)[0]]
+            data = {
+                'values': list(sales_paginated), 
+                'fields': field_names, 
+                'title': 'لیست فروش',
+                'pagination': {
+                    'current_page': page,
+                    'page_size': page_size,
+                    'total_count': total_count,
+                    'total_pages': total_pages,
+                    'has_next': page < total_pages,
+                    'has_previous': page > 1
+                }
+            }
+            return JsonResponse(data=data, status=200)
         else:
             return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
     except Exception as e:
@@ -3196,64 +3639,111 @@ def report_Purchases(request):
             filter_type = request.GET.get('filter')
             current_time = timezone.now()
 
+            # Pagination parameters
+            page = int(request.GET.get('page', 1))
+            page_size = int(request.GET.get('page_size', 10))
+            
+            # Search parameter
+            search_query = request.GET.get('search', '').strip()
+            
+            # Validate pagination parameters
+            if page < 1:
+                page = 1
+            if page_size < 1 or page_size > 100:
+                page_size = 10
 
             if filter_type == 'year':
-                purchases = Purchases.objects.filter(date__year=current_time.year).exclude(status='Cancelled').values()
+                purchases_queryset = Purchases.objects.filter(date__year=current_time.year).exclude(status='Cancelled')
             elif filter_type == 'month':
-                purchases = Purchases.objects.filter(date__month=current_time.month).exclude(status='Cancelled').values()
+                purchases_queryset = Purchases.objects.filter(date__month=current_time.month).exclude(status='Cancelled')
             elif filter_type == 'week':
                 start_of_last_week = current_time - timedelta(days=6)
                 end_of_last_week = current_time
-                purchases = Purchases.objects.filter(date__range=(start_of_last_week, end_of_last_week)).exclude(status='Cancelled').values()
+                purchases_queryset = Purchases.objects.filter(date__range=(start_of_last_week, end_of_last_week)).exclude(status='Cancelled')
             elif filter_type == 'day':
                 hours_ago = current_time - timedelta(hours=24)
-                purchases = Purchases.objects.filter(date__gte=hours_ago, date__lt=current_time).exclude(status='Cancelled').values()
+                purchases_queryset = Purchases.objects.filter(date__gte=hours_ago, date__lt=current_time).exclude(status='Cancelled')
             else:
                 return JsonResponse({'status': 'error', 'message': 'Invalid filter type'}, status=400)
 
-            if purchases.exists():
-                for purchase in purchases:
+            # Apply search filter if search query is provided
+            if search_query:
+                from django.db.models import Q
+                purchases_queryset = purchases_queryset.filter(
+                    Q(supplier_name__icontains=search_query) |
+                    Q(material_type__icontains=search_query) |
+                    Q(material_name__icontains=search_query) |
+                    Q(license_number__icontains=search_query) |
+                    Q(status__icontains=search_query) |
+                    Q(invoice_number__icontains=search_query) |
+                    Q(unit__icontains=search_query)
+                )
+
+            # Calculate pagination
+            total_count = purchases_queryset.count()
+            total_pages = (total_count + page_size - 1) // page_size
+            
+            if total_count == 0:
+                return JsonResponse({'status': 'error', 'message': 'No purchase records found'}, status=404)
+            
+            # Apply pagination
+            start_index = (page - 1) * page_size
+            end_index = start_index + page_size
+            purchases_paginated = purchases_queryset[start_index:end_index].values()
+
+            # Convert dates to Shamsi format
+            for purchase in purchases_paginated:
                     for field in datetime_fields:
                         if field in purchase and purchase[field] is not None:
                             # Convert to Shamsi date
                             shamsi_date = jdatetime.datetime.fromgregorian(datetime=purchase[field])
                             # Update the field in the dictionary
                             purchase[field] = shamsi_date.strftime('%Y-%m-%d %H:%M')
-                # field_names = [k for k in list(purchases)[0]]
-                field_names = [
-                     'date',
-                     'status',
-                     'payment_date',
-                     'supplier_name',
-                     'material_type',
-                     'material_name',
-                     'unit',
-                     'license_number',
-                     'receive_date',
-                     'quantity',
-                     'quality',
-                     'penalty',
-                     'weight1',
-                     'weight2',
-                     'net_weight',
-                     'price_per_kg',
-                     'vat',
-                     'total_price',
-                     'extra_cost',
-                     'invoice_status',
-                     'payment_details',
-                     'invoice_number',
-                     'document_info',
-                     'comments',
-                     'cancellation_reason',
-                     'shipment_id_id',
-                     'username',
-                     'logs'
+            
+            field_names = [
+                    'date',
+                    'status',
+                    'payment_date',
+                    'supplier_name',
+                    'material_type',
+                    'material_name',
+                    'unit',
+                    'license_number',
+                    'receive_date',
+                    'quantity',
+                    'quality',
+                    'penalty',
+                    'weight1',
+                    'weight2',
+                    'net_weight',
+                    'price_per_kg',
+                    'vat',
+                    'total_price',
+                    'extra_cost',
+                    'invoice_status',
+                    'payment_details',
+                    'invoice_number',
+                    'document_info',
+                    'comments',
+                    'cancellation_reason',
+                    'shipment_id_id',
+                    'username',
+                    'logs'
                 ]
-                data = {'values': list(purchases), 'fields': field_names, 'title': 'لیست خرید',}
-                return JsonResponse(data=data, status=200)
-            else:
-                return JsonResponse({'status': 'error', 'message': 'No purchase records found'}, status=404)
+            data = {
+                'values': list(purchases_paginated), 
+                'fields': field_names, 
+                'title': 'لیست خرید',
+                'pagination': {
+                    'current_page': page,
+                    'page_size': page_size,
+                    'total_count': total_count,
+                    'total_pages': total_pages,
+                    'has_next': page < total_pages,
+                    'has_previous': page > 1
+                }
+            }
+            return JsonResponse(data=data, status=200)
         else:
             return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
     except Exception as e:
@@ -3267,29 +3757,23 @@ def report_RawMaterial(request):
             filter_type = request.GET.get('filter')
             current_time = timezone.now()
 
-            field_names = [
-                 'date',
-                 'location',
-                 'supplier_name',
-                 'material_type',
-                 'material_name',
-                 'unit',
-                 'grade',
-                 'status',
-                 'receive_date',
-                 'last_date',
-                 'description',
-                 'comments',
-                 'shipment_id_id',
-                 'qr_code',
-                 'username',
-                 'logs'
-            ]
+            # Pagination parameters
+            page = int(request.GET.get('page', 1))
+            page_size = int(request.GET.get('page_size', 10))
+            search_query = request.GET.get('search', '')
+            
+            # Validate pagination parameters
+            if page < 1:
+                page = 1
+            if page_size < 1 or page_size > 100:
+                page_size = 10
+
             field_names = ['unit', 'location', 'supplier_name', 'material_type', 'material_name',]
             # Get all table names from the database
             all_table_names = connection.introspection.table_names()
             anbar_table_names = [name for name in all_table_names if name.startswith('Anbar_')]
             mavad = []
+            
             for anbar_name in anbar_table_names:
                 AnbarModel = apps.get_model('myapp', anbar_name)
 
@@ -3306,21 +3790,45 @@ def report_RawMaterial(request):
                     rawMaterial = AnbarModel.objects.filter(receive_date__gte=hours_ago, receive_date__lt=current_time, status='In-stock', reel_number__isnull=True, supplier_name__isnull=False)
                 else:
                     return JsonResponse({'status': 'error', 'message': 'Invalid filter type'}, status=400)
+                
                 anbar_records = rawMaterial.values(*field_names).annotate(quantity=Count('id')).order_by('location')
                 if anbar_records.exists():
                     for raw in anbar_records:
-                    #     for field in datetime_fields:
-                    #         if field in raw and raw[field] is not None:
-                    #             # Convert to Shamsi date
-                    #             shamsi_date = jdatetime.datetime.fromgregorian(datetime=raw[field])
-                    #             # Update the field in the dictionary
-                    #             raw[field] = shamsi_date.strftime('%Y-%m-%d %H:%M')
-
                         mavad.append(raw)
 
             if mavad:
+                # Apply search filter if search query is provided
+                if search_query:
+                    search_query_lower = search_query.lower()
+                    mavad = [raw for raw in mavad if any(
+                        search_query_lower in str(raw.get(field, '')).lower() for field in field_names
+                    )]
+                # Apply pagination to the combined results
+                total_count = len(mavad)
+                total_pages = (total_count + page_size - 1) // page_size
+                
+                if total_count == 0:
+                    return JsonResponse({'status': 'error', 'message': 'No raw material records found'}, status=404)
+                
+                # Apply pagination
+                start_index = (page - 1) * page_size
+                end_index = start_index + page_size
+                mavad_paginated = mavad[start_index:end_index]
+                
                 field_names = ['unit', 'location','quantity', 'supplier_name', 'material_type', 'material_name',]
-                data = {'values': mavad, 'fields': field_names , 'title': 'لیست مواد اولیه',}
+                data = {
+                    'values': mavad_paginated, 
+                    'fields': field_names, 
+                    'title': 'لیست مواد اولیه',
+                    'pagination': {
+                        'current_page': page,
+                        'page_size': page_size,
+                        'total_count': total_count,
+                        'total_pages': total_pages,
+                        'has_next': page < total_pages,
+                        'has_previous': page > 1
+                    }
+                }
                 return JsonResponse(data=data, status=200)
             else:
                 return JsonResponse({'status': 'error', 'message': 'No raw material records found'}, status=404)
@@ -3337,54 +3845,100 @@ def report_Products(request):
         if request.method == 'POST':
             filter_type = request.GET.get('filter')
             current_time = timezone.now()
+            
+            # Pagination parameters
+            page = int(request.GET.get('page', 1))
+            page_size = int(request.GET.get('page_size', 10))
+            
+            # Search parameter
+            search_query = request.GET.get('search', '').strip()
+            
+            # Validate pagination parameters
+            if page < 1:
+                page = 1
+            if page_size < 1 or page_size > 100:
+                page_size = 10
 
             if filter_type == 'year':
-                products = Products.objects.filter(receive_date__year=current_time.year, status='In-stock').order_by('-width').values()
+                products_queryset = Products.objects.filter(receive_date__year=current_time.year, status='In-stock').order_by('-width')
             elif filter_type == 'month':
-                products = Products.objects.filter(receive_date__month=current_time.month, status='In-stock').order_by('-width').values()
+                products_queryset = Products.objects.filter(receive_date__month=current_time.month, status='In-stock').order_by('-width')
             elif filter_type == 'week':
                 start_of_last_week = current_time - timedelta(days=6)
                 end_of_last_week = current_time
-                products = Products.objects.filter(receive_date__range=(start_of_last_week, end_of_last_week), status='In-stock').order_by('-width').values()
+                products_queryset = Products.objects.filter(receive_date__range=(start_of_last_week, end_of_last_week), status='In-stock').order_by('-width')
             elif filter_type == 'day':
                 hours_ago = current_time - timedelta(hours=24)
-                products = Products.objects.filter(receive_date__gte=hours_ago, receive_date__lt=current_time, status='In-stock').order_by('-width').values()
+                products_queryset = Products.objects.filter(receive_date__gte=hours_ago, receive_date__lt=current_time, status='In-stock').order_by('-width')
             else:
                 return JsonResponse({'status': 'error', 'message': 'Invalid filter type'}, status=400)
 
-            if products.exists():
-                for product in products:
+            # Apply search filter if search query is provided
+            if search_query:
+                from django.db.models import Q
+                products_queryset = products_queryset.filter(
+                    Q(reel_number__icontains=search_query) |
+                    Q(profile_name__icontains=search_query) |
+                    Q(location__icontains=search_query) |
+                    Q(grade__icontains=search_query) |
+                    Q(status__icontains=search_query)
+                )
+
+            # Calculate pagination
+            total_count = products_queryset.count()
+            total_pages = (total_count + page_size - 1) // page_size
+            
+            if total_count == 0:
+                return JsonResponse({'status': 'error', 'message': 'No product records found'}, status=404)
+            
+            # Apply pagination
+            start_index = (page - 1) * page_size
+            end_index = start_index + page_size
+            products_paginated = products_queryset[start_index:end_index].values()
+
+            # Convert dates to Shamsi format
+            for product in products_paginated:
                     for field in datetime_fields:
                         if field in product and product[field] is not None:
                             # Convert to Shamsi date
                             shamsi_date = jdatetime.datetime.fromgregorian(datetime=product[field])
                             # Update the field in the dictionary
                             product[field] = shamsi_date.strftime('%Y-%m-%d %H:%M')
-                # field_names = [k for k in list(products)[0]]
-                field_names =[
-                     'date',
-                     'location',
-                     'width',
-                     'reel_number',
-                     'gsm',
-                     'length',
-                     'grade',
-                     'breaks',
-                     'status',
-                     'receive_date',
-                     'last_date',
-                     'comments',
-                     'qr_code',
-                     'profile_name',
-                     'shipment_id_id',
-                     'username',
-                     'logs'
+            
+            field_names =[
+                    'date',
+                    'location',
+                    'width',
+                    'reel_number',
+                    'gsm',
+                    'length',
+                    'grade',
+                    'breaks',
+                    'status',
+                    'receive_date',
+                    'last_date',
+                    'comments',
+                    'qr_code',
+                    'profile_name',
+                    'shipment_id_id',
+                    'username',
+                    'logs'
                  ]
 
-                data = {'values': list(products), 'fields': field_names, 'title': 'لیست محصولات',}
-                return JsonResponse(data=data, status=200)
-            else:
-                return JsonResponse({'status': 'error', 'message': 'No product records found'}, status=404)
+            data = {
+                'values': list(products_paginated), 
+                'fields': field_names, 
+                'title': 'لیست محصولات',
+                'pagination': {
+                    'current_page': page,
+                    'page_size': page_size,
+                    'total_count': total_count,
+                    'total_pages': total_pages,
+                    'has_next': page < total_pages,
+                    'has_previous': page > 1
+                }
+            }
+            return JsonResponse(data=data, status=200)
         else:
             return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
     except Exception as e:
@@ -3397,53 +3951,102 @@ def report_Consumption(request):
         if request.method == 'POST':
             filter_type = request.GET.get('filter')
             current_time = timezone.now()
+            
+            # Pagination parameters
+            page = int(request.GET.get('page', 1))
+            page_size = int(request.GET.get('page_size', 10))
+            
+            # Search parameter
+            search_query = request.GET.get('search', '').strip()
+            
+            # Validate pagination parameters
+            if page < 1:
+                page = 1
+            if page_size < 1 or page_size > 100:
+                page_size = 10
 
             if filter_type == 'year':
-                consumption = Consumption.objects.filter(receive_date__year=current_time.year).exclude(status='Cancelled').values()
+                consumption_queryset = Consumption.objects.filter(receive_date__year=current_time.year).exclude(status='Cancelled')
             elif filter_type == 'month':
-                consumption = Consumption.objects.filter(receive_date__month=current_time.month).exclude(status='Cancelled').values()
+                consumption_queryset = Consumption.objects.filter(receive_date__month=current_time.month).exclude(status='Cancelled')
             elif filter_type == 'week':
                 start_of_last_week = current_time - timedelta(days=6)
                 end_of_last_week = current_time
-                consumption = Consumption.objects.filter(receive_date__range=(start_of_last_week, end_of_last_week)).exclude(status='Cancelled').values()
+                consumption_queryset = Consumption.objects.filter(receive_date__range=(start_of_last_week, end_of_last_week)).exclude(status='Cancelled')
             elif filter_type == 'day':
                 hours_ago = current_time - timedelta(hours=24)
-                consumption = Consumption.objects.filter(receive_date__gte=hours_ago, receive_date__lt=current_time).exclude(status='Cancelled').values()
+                consumption_queryset = Consumption.objects.filter(receive_date__gte=hours_ago, receive_date__lt=current_time).exclude(status='Cancelled')
             else:
                 return JsonResponse({'status': 'error', 'message': 'Invalid filter type'}, status=400)
 
-            if consumption.exists():
-                for con in consumption:
+            # Apply search filter if search query is provided
+            if search_query:
+                from django.db.models import Q
+                consumption_queryset = consumption_queryset.filter(
+                    Q(supplier_name__icontains=search_query) |
+                    Q(material_type__icontains=search_query) |
+                    Q(material_name__icontains=search_query) |
+                    Q(location__icontains=search_query) |
+                    Q(profile_name__icontains=search_query) |
+                    Q(reel_number__icontains=search_query) |
+                    Q(status__icontains=search_query) |
+                    Q(grade__icontains=search_query)
+                )
+
+            # Calculate pagination
+            total_count = consumption_queryset.count()
+            total_pages = (total_count + page_size - 1) // page_size
+            
+            if total_count == 0:
+                return JsonResponse({'status': 'error', 'message': 'No consumption records found'}, status=404)
+            
+            # Apply pagination
+            start_index = (page - 1) * page_size
+            end_index = start_index + page_size
+            consumption_paginated = consumption_queryset[start_index:end_index].values()
+
+            # Convert dates to Shamsi format
+            for con in consumption_paginated:
                     for field in datetime_fields:
                         if field in con and con[field] is not None:
                             # Convert to Shamsi date
                             shamsi_date = jdatetime.datetime.fromgregorian(datetime=con[field])
                             # Update the field in the dictionary
                             con[field] = shamsi_date.strftime('%Y-%m-%d %H:%M')
-                # field_names = [k for k in list(consumption)[0]]
-                field_names =[
-                     'date',
-                     'supplier_name',
-                     'status',
-                     'location',
-                     'receive_date',
-                     'shipment_id_id',
-                     'material_type',
-                     'material_name',
-                     'unit',
-                     'reel_number',
-                     'profile_name',
-                     'grade',
-                     'comments',
-                     'cancelling_reason',
-                     'username',
-                     'logs'
+            
+            field_names =[
+                    'date',
+                    'supplier_name',
+                    'status',
+                    'location',
+                    'receive_date',
+                    'shipment_id_id',
+                    'material_type',
+                    'material_name',
+                    'unit',
+                    'reel_number',
+                    'profile_name',
+                    'grade',
+                    'comments',
+                    'cancelling_reason',
+                    'username',
+                    'logs'
                 ]
 
-                data = {'values': list(consumption), 'fields': field_names, 'title': 'لیست مصرف',}
-                return JsonResponse(data=data, status=200)
-            else:
-                return JsonResponse({'status': 'error', 'message': 'No consumption records found'}, status=404)
+            data = {
+                'values': list(consumption_paginated), 
+                'fields': field_names, 
+                'title': 'لیست مصرف',
+                'pagination': {
+                    'current_page': page,
+                    'page_size': page_size,
+                    'total_count': total_count,
+                    'total_pages': total_pages,
+                    'has_next': page < total_pages,
+                    'has_previous': page > 1
+                }
+            }
+            return JsonResponse(data=data, status=200)
         else:
             return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
     except Exception as e:
@@ -3457,41 +4060,85 @@ def report_Alert(request):
             filter_type = request.GET.get('filter')
             current_time = timezone.now()
 
+            # Pagination parameters
+            page = int(request.GET.get('page', 1))
+            page_size = int(request.GET.get('page_size', 10))
+            
+            # Search parameter
+            search_query = request.GET.get('search', '').strip()
+            
+            # Validate pagination parameters
+            if page < 1:
+                page = 1
+            if page_size < 1 or page_size > 100:
+                page_size = 10
+
             if filter_type == 'year':
-                alert = Alert.objects.filter(date__year=current_time.year).order_by('-id').values()
+                alert_queryset = Alert.objects.filter(date__year=current_time.year).order_by('-id')
             elif filter_type == 'month':
-                alert = Alert.objects.filter(date__month=current_time.month).order_by('-id').values()
+                alert_queryset = Alert.objects.filter(date__month=current_time.month).order_by('-id')
             elif filter_type == 'week':
                 start_of_last_week = current_time - timedelta(days=6)
                 end_of_last_week = current_time
-                alert = Alert.objects.filter(date__range=(start_of_last_week, end_of_last_week)).order_by('-id').values()
+                alert_queryset = Alert.objects.filter(date__range=(start_of_last_week, end_of_last_week)).order_by('-id')
             elif filter_type == 'day':
                 hours_ago = current_time - timedelta(hours=24)
-                alert = Alert.objects.filter(date__gte=hours_ago, date__lt=current_time).order_by('-id').values()
+                alert_queryset = Alert.objects.filter(date__gte=hours_ago, date__lt=current_time).order_by('-id')
             else:
                 return JsonResponse({'status': 'error', 'message': 'Invalid filter type'}, status=400)
 
-            if alert.exists():
-                for con in alert:
+            # Apply search filter if search query is provided
+            if search_query:
+                from django.db.models import Q
+                alert_queryset = alert_queryset.filter(
+                    Q(message__icontains=search_query) |
+                    Q(status__icontains=search_query)
+                )
 
-                    # Convert to Shamsi date
-                    shamsi_date = jdatetime.datetime.fromgregorian(datetime=con['date'])
-                    # Update the field in the dictionary
-                    con['date'] = shamsi_date.strftime('%Y-%m-%d %H:%M')
-                field_names = ['date', 'status', 'message']
-                data = {'values': list(alert), 'fields': field_names, 'title': 'هشدار ها',}
-                return JsonResponse(data=data, status=200)
-            else:
+            # Calculate pagination
+            total_count = alert_queryset.count()
+            total_pages = (total_count + page_size - 1) // page_size
+            
+            if total_count == 0:
                 return JsonResponse({'status': 'error', 'message': 'No alert records found'}, status=404)
+            
+            # Apply pagination
+            start_index = (page - 1) * page_size
+            end_index = start_index + page_size
+            alert_paginated = alert_queryset[start_index:end_index].values()
+
+            # Convert dates to Shamsi format
+            for con in alert_paginated:
+                # Convert to Shamsi date
+                shamsi_date = jdatetime.datetime.fromgregorian(datetime=con['date'])
+                # Update the field in the dictionary
+                con['date'] = shamsi_date.strftime('%Y-%m-%d %H:%M')
+            
+            field_names = ['date', 'status', 'message']
+            data = {
+                'values': list(alert_paginated), 
+                'fields': field_names, 
+                'title': 'هشدار ها',
+                'pagination': {
+                    'current_page': page,
+                    'page_size': page_size,
+                    'total_count': total_count,
+                    'total_pages': total_pages,
+                    'has_next': page < total_pages,
+                    'has_previous': page > 1
+                }
+            }
+            return JsonResponse(data=data, status=200)
         else:
             return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
-
+@login_required
 def all_pages(request):
     if request.method == 'GET':
         return render(request, 'all_pages.html')
+
 
 @csrf_exempt
 def products_page(request):
@@ -3560,3 +4207,94 @@ def products_page(request):
             return render(request, 'products_page.html')
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AlertStatusUpdateView(View):
+    """
+    API endpoint to update an Alert's status to 'Resolved'
+
+    Required POST data:
+    - alert_id: The ID of the alert to update
+    """
+
+    def post(self, request, *args, **kwargs):
+        try:
+            # Parse the request body
+            data = json.loads(request.body)
+            alert_id = data.get('alert_id')
+
+            print('we in change statu')
+            print('data is:',data, alert_id)
+            if not alert_id:
+                return JsonResponse({'error': 'alert_id is required'}, status=400)
+
+            # Get the alert and update its status
+            alert = Alert.objects.get(id=alert_id)
+            alert.status = 'Resolved'
+            alert.save()
+
+            return JsonResponse({
+                'message': 'Alert status updated successfully',
+                'alert_id': alert.id,
+                'new_status': alert.status,
+                'status': 'success',
+            })
+
+        except Alert.DoesNotExist:
+            return JsonResponse({'error': 'Alert not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def get_unread_alerts(request):
+    """
+    Handles GET requests to retrieve all unread alerts from the Alert model.
+    
+    This view function queries the Alert model for all records with status 'Pending'
+    and returns them in a JSON response. It handles errors gracefully by returning
+    appropriate HTTP status codes and error messages.
+    
+    Parameters:
+        request (HttpRequest): The HTTP request object.
+        
+    Returns:
+        JsonResponse: A JSON response containing a list of unread alerts if the
+                      operation is successful, or an error message if an error occurs.
+    """
+    if request.method == 'GET':
+        try:
+            # Query the Alert model for all records with status 'Pending' (unread)
+            unread_alerts = Alert.objects.filter(status='Pending').order_by('-id')
+            
+            # Convert queryset to list of dictionaries
+            alerts_data = []
+            for alert in unread_alerts:
+                alerts_data.append({
+                    'id': alert.id,
+                    'message': alert.message,
+                    'date': alert.date.strftime('%Y-%m-%d %H:%M'),
+                    'status': alert.status
+                })
+            
+            # Return the unread alerts as a JSON response
+            return JsonResponse({
+                'status': 'success', 
+                'message': f'Found {len(alerts_data)} unread alerts',
+                'alerts': alerts_data,
+                'count': len(alerts_data)
+            }, status=200)
+            
+        except Exception as e:
+            # Return a general error response
+            return JsonResponse({
+                'status': 'error', 
+                'message': f'Error retrieving unread alerts: {str(e)}'
+            }, status=500)
+    else:
+        return JsonResponse({
+            'status': 'error', 
+            'message': 'Invalid request method. Only GET requests are allowed.'
+        }, status=405)
+
